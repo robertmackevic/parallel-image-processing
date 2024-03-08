@@ -1,10 +1,48 @@
 import time
 from functools import wraps
+from os import remove
 from pathlib import Path
 from typing import Callable, Any
+from zipfile import ZipFile
 
 import cv2
+import requests
 from numpy.typing import NDArray
+from tqdm import tqdm
+
+from src.paths import DATASET_DOWNLOAD_PATH, DATASET_DIR
+
+
+def download_dataset_from_dropbox(url: str) -> None:
+    if DATASET_DIR.is_dir():
+        print("Dataset already exists")
+        return
+
+    direct_link = url.replace("dl=0", "raw=1").replace("dl=1", "raw=1")
+    response = requests.get(direct_link, stream=True)
+
+    if response.status_code != 200:
+        print("Download request failed")
+        return
+
+    total_size = int(response.headers.get("content-length", 0))
+    progress_bar = tqdm(total=total_size, unit="B", unit_scale=True)
+
+    with open(DATASET_DOWNLOAD_PATH, "wb") as file:
+        for data in response.iter_content(chunk_size=128):
+            progress_bar.update(len(data))
+            file.write(data)
+        progress_bar.close()
+
+    print("Dataset downloaded. Unzipping...")
+    extract_dir = DATASET_DOWNLOAD_PATH.with_suffix("")
+    extract_dir.mkdir(exist_ok=True)
+
+    with ZipFile(DATASET_DOWNLOAD_PATH, "r") as file:
+        file.extractall(extract_dir)
+
+    remove(DATASET_DOWNLOAD_PATH)
+    print("Dataset extracted")
 
 
 def load_grayscale_image(filepath: Path) -> NDArray:
