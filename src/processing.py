@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from os import listdir
 from pathlib import Path
 
@@ -29,6 +29,15 @@ def process_images_sequential(image_dir: Path) -> None:
 @timeit
 def process_images_parallel_1(image_dir: Path) -> None:
     with ThreadPoolExecutor() as executor:
+        executor.map(
+            _transform_image,
+            [image_dir / filename for filename in listdir(image_dir)]
+        )
+
+
+@timeit
+def process_images_parallel_2(image_dir: Path) -> None:
+    with ProcessPoolExecutor() as executor:
         executor.map(
             _transform_image,
             [image_dir / filename for filename in listdir(image_dir)]
