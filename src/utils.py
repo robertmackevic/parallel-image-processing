@@ -18,8 +18,7 @@ def download_dataset_from_dropbox(url: str) -> None:
         print("Dataset already exists")
         return
 
-    direct_link = url.replace("dl=0", "raw=1").replace("dl=1", "raw=1")
-    response = requests.get(direct_link, stream=True)
+    response = requests.get(url, stream=True)
 
     if response.status_code != 200:
         print("Download request failed")
