@@ -44,8 +44,8 @@ def download_dataset_from_dropbox(url: str) -> None:
     print("Dataset extracted")
 
 
-def load_grayscale_image(filepath: Path) -> NDArray:
-    return cv2.imread(str(filepath), cv2.IMREAD_GRAYSCALE)
+def load_image(filepath: Path) -> NDArray:
+    return cv2.imread(str(filepath))
 
 
 def show_image(image: NDArray) -> None:
