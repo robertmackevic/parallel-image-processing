@@ -1,9 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from functools import partial
 from multiprocessing import Process
-from os import listdir
+from os import listdir, cpu_count
 from pathlib import Path
-from typing import Callable, List, Type
+from typing import Callable, List, Type, Optional
 
 from numpy.typing import NDArray
 
@@ -29,9 +29,10 @@ def _load_and_transform(image_filepath: Path, transform: Callable[[NDArray], NDA
 def _apply_transformation_with_pooling(
         image_filepaths: List[Path],
         transform: Callable[[NDArray], NDArray],
-        pool_executor: Type
+        pool_executor: Type[ProcessPoolExecutor | ThreadPoolExecutor],
+        max_workers: Optional[int] = None
 ) -> None:
-    with pool_executor() as executor:
+    with pool_executor(max_workers) as executor:
         executor.map(partial(_load_and_transform, transform=transform), image_filepaths)
 
 
@@ -81,8 +82,12 @@ def process_images_parallel_2_multiprocess(image_dir: Path) -> None:
 def process_images_parallel_3(image_dir: Path) -> None:
     filepaths = [image_dir / filename for filename in listdir(image_dir)]
 
+    max_workers_per_process = cpu_count() // 3
     processes = [
-        Process(target=_apply_transformation_with_pooling, args=(filepaths, transform, ThreadPoolExecutor))
+        Process(
+            target=_apply_transformation_with_pooling,
+            args=(filepaths, transform, ThreadPoolExecutor, max_workers_per_process)
+        )
         for transform in (convert_to_bw, apply_blur, apply_noise)
     ]
 
