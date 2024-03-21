@@ -48,6 +48,10 @@ def load_image(filepath: Path) -> NDArray:
     return cv2.imread(str(filepath))
 
 
+def save_image(filepath: Path, image: NDArray) -> None:
+    cv2.imwrite(str(filepath), image)
+
+
 def show_image(image: NDArray) -> None:
     cv2.imshow("Display", image)
     cv2.waitKey(0)
@@ -61,7 +65,7 @@ def timeit(function: Callable) -> Callable:
         result = function(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
-        print(f"Function {function.__name__} Took {total_time:.4f} seconds")
+        print(f"Function {function.__name__} took {total_time:.4f} seconds")
         return result
 
     return wrapper

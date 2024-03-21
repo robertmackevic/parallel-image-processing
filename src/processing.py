@@ -1,18 +1,18 @@
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from functools import partial
-from multiprocessing import Process
-from os import listdir, cpu_count
+from os import listdir, makedirs
 from pathlib import Path
-from typing import Callable, List, Type, Optional
+from typing import Callable, Type, Optional
 
 from numpy.typing import NDArray
 
+from src.paths import OUTPUT_DIR
 from src.transformations import (
     convert_to_bw,
     apply_blur,
     apply_noise
 )
-from src.utils import timeit, load_image
+from src.utils import timeit, load_image, save_image
 
 
 def _apply_transformations(image_filepath: Path) -> None:
@@ -22,77 +22,38 @@ def _apply_transformations(image_filepath: Path) -> None:
     apply_noise(image)
 
 
-def _load_and_transform(image_filepath: Path, transform: Callable[[NDArray], NDArray]) -> NDArray:
-    return transform(load_image(image_filepath))
+def _load_transform_and_save(
+        image_filepath: Path,
+        transform: Callable[[NDArray], NDArray],
+        output_dir: Path
+) -> None:
+    image = load_image(image_filepath)
+    image = transform(image)
+    save_image(filepath=output_dir / image_filepath.name, image=image)
+    return
 
 
-def _apply_transformation_with_pooling(
-        image_filepaths: List[Path],
+@timeit
+def process_images_sequential(image_dir: Path, transform: Callable[[NDArray], NDArray]) -> None:
+    output_dir = OUTPUT_DIR / transform.__name__
+    makedirs(output_dir, exist_ok=True)
+
+    for filename in listdir(image_dir):
+        _load_transform_and_save(image_dir / filename, transform, output_dir)
+
+
+@timeit
+def process_images_parallel_1(
+        image_dir: Path,
         transform: Callable[[NDArray], NDArray],
         pool_executor: Type[ProcessPoolExecutor | ThreadPoolExecutor],
-        max_workers: Optional[int] = None
+        num_workers: Optional[int] = None
 ) -> None:
-    with pool_executor(max_workers) as executor:
-        executor.map(partial(_load_and_transform, transform=transform), image_filepaths)
+    output_dir = OUTPUT_DIR / transform.__name__
+    makedirs(output_dir, exist_ok=True)
 
-
-@timeit
-def process_images_sequential(image_dir: Path) -> None:
-    for filename in listdir(image_dir):
-        _apply_transformations(image_filepath=image_dir / filename)
-
-
-@timeit
-def process_images_parallel_1_multithread(image_dir: Path) -> None:
-    with ThreadPoolExecutor() as executor:
+    with pool_executor(num_workers) as executor:
         executor.map(
-            _apply_transformations,
+            partial(_load_transform_and_save, transform=transform, output_dir=output_dir),
             [image_dir / filename for filename in listdir(image_dir)]
         )
-
-
-@timeit
-def process_images_parallel_1_multiprocess(image_dir: Path) -> None:
-    with ProcessPoolExecutor() as executor:
-        executor.map(
-            _apply_transformations,
-            [image_dir / filename for filename in listdir(image_dir)]
-        )
-
-
-@timeit
-def process_images_parallel_2_multithread(image_dir: Path) -> None:
-    filepaths = [image_dir / filename for filename in listdir(image_dir)]
-
-    _apply_transformation_with_pooling(filepaths, convert_to_bw, ThreadPoolExecutor)
-    _apply_transformation_with_pooling(filepaths, apply_blur, ThreadPoolExecutor)
-    _apply_transformation_with_pooling(filepaths, apply_noise, ThreadPoolExecutor)
-
-
-@timeit
-def process_images_parallel_2_multiprocess(image_dir: Path) -> None:
-    filepaths = [image_dir / filename for filename in listdir(image_dir)]
-
-    _apply_transformation_with_pooling(filepaths, convert_to_bw, ProcessPoolExecutor)
-    _apply_transformation_with_pooling(filepaths, apply_blur, ProcessPoolExecutor)
-    _apply_transformation_with_pooling(filepaths, apply_noise, ProcessPoolExecutor)
-
-
-@timeit
-def process_images_parallel_3(image_dir: Path) -> None:
-    filepaths = [image_dir / filename for filename in listdir(image_dir)]
-
-    max_workers_per_process = cpu_count() // 3
-    processes = [
-        Process(
-            target=_apply_transformation_with_pooling,
-            args=(filepaths, transform, ThreadPoolExecutor, max_workers_per_process)
-        )
-        for transform in (convert_to_bw, apply_blur, apply_noise)
-    ]
-
-    for process in processes:
-        process.start()
-
-    for process in processes:
-        process.join()
