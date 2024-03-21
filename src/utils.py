@@ -68,7 +68,7 @@ def timeit(function: Callable) -> Callable:
         end_time = time.perf_counter()
         total_time = end_time - start_time
         print(f"Function {function.__name__} "
-              f"with args {[v.__name__ for k, v in kwargs.items()]} "
+              f"with args {[v.__name__ for v in kwargs.values() if hasattr(v, '__name__')]} "
               f"took {total_time:.4f} seconds")
         return result
 
