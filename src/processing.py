@@ -7,19 +7,7 @@ from typing import Callable, Type, Optional
 from numpy.typing import NDArray
 
 from src.paths import OUTPUT_DIR
-from src.transformations import (
-    convert_to_bw,
-    apply_blur,
-    apply_noise
-)
 from src.utils import timeit, load_image, save_image
-
-
-def _apply_transformations(image_filepath: Path) -> None:
-    image = load_image(image_filepath)
-    convert_to_bw(image)
-    apply_blur(image)
-    apply_noise(image)
 
 
 def _load_transform_and_save(
