@@ -7,6 +7,7 @@ from zipfile import ZipFile
 
 import cv2
 import requests
+from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
 
@@ -53,9 +54,10 @@ def save_image(filepath: Path, image: NDArray) -> None:
 
 
 def show_image(image: NDArray) -> None:
-    cv2.imshow("Display", image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    plt.imshow(image_rgb)
+    plt.axis("off")
+    plt.show()
 
 
 def timeit(function: Callable) -> Callable:
@@ -65,8 +67,8 @@ def timeit(function: Callable) -> Callable:
         result = function(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
-        print(f"Function {function.__name__}"
-              f"with args {[v.__name__ for k, v in kwargs.items()]}"
+        print(f"Function {function.__name__} "
+              f"with args {[v.__name__ for k, v in kwargs.items()]} "
               f"took {total_time:.4f} seconds")
         return result
 
