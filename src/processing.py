@@ -14,21 +14,12 @@ from src.utils import timeit, load_image, save_image
 
 
 def _load_transform_and_save(
-        image_filepath: Path,
-        transform: Callable[[NDArray], NDArray],
-        output_dir: Path
+        filepath: Path,
+        output_dir: Path,
+        transform: Callable[[NDArray], NDArray]
 ) -> None:
-    image = transform(load_image(image_filepath))
-    save_image(filepath=output_dir / image_filepath.name, image=image)
-
-
-def _bulk_load_transform_and_save(
-        image_filepaths: List[Path],
-        transform: Callable[[NDArray], NDArray],
-        output_dir: Path
-) -> None:
-    for filepath in image_filepaths:
-        _load_transform_and_save(filepath, transform, output_dir)
+    image = transform(load_image(filepath))
+    save_image(filepath=output_dir / filepath.name, image=image)
 
 
 def _split_data_into_chunks(data: List[Any], num_of_chunks: int) -> List[List[Any]]:
@@ -36,11 +27,19 @@ def _split_data_into_chunks(data: List[Any], num_of_chunks: int) -> List[List[An
     return [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(num_of_chunks)]
 
 
-def _load_data_conveyor(loaded_data_queue: Queue) -> None:
-    for filename in listdir(DATASET_DIR):
+def _execute(executors: List[Process | Thread]) -> None:
+    for executor in executors:
+        executor.start()
+
+    for executor in executors:
+        executor.join()
+
+
+def _load_data_conveyor(filepaths: List[Path], loaded_data_queue: Queue) -> None:
+    for filepath in filepaths:
         loaded_data_queue.put({
-            "filename": filename,
-            "image": load_image(DATASET_DIR / filename)
+            "filename": filepath.name,
+            "image": load_image(filepath)
         })
 
     loaded_data_queue.put(None)
@@ -68,7 +67,7 @@ def _process_data_conveyor(
     processed_data_queue.put(None)
 
 
-def _save_data_conveyor(processed_data_queue: Queue, output_dir: Path) -> None:
+def _save_data_conveyor(output_dir: Path, processed_data_queue: Queue) -> None:
     while True:
         try:
             data = processed_data_queue.get()
@@ -81,13 +80,27 @@ def _save_data_conveyor(processed_data_queue: Queue, output_dir: Path) -> None:
         save_image(filepath=output_dir / data["filename"], image=data["image"])
 
 
+def _run_image_processing_conveyor(
+        filepaths: List[Path],
+        output_dir: Path,
+        transform: Callable[[NDArray], NDArray]
+) -> None:
+    loaded_data_queue, processed_data_queue = Queue(), Queue()
+
+    _execute([
+        Thread(target=_load_data_conveyor, args=(filepaths, loaded_data_queue)),
+        Thread(target=_process_data_conveyor, args=(loaded_data_queue, processed_data_queue, transform)),
+        Thread(target=_save_data_conveyor, args=(output_dir, processed_data_queue)),
+    ])
+
+
 @timeit
 def process_images_sequential(transform: Callable[[NDArray], NDArray]) -> None:
     output_dir = OUTPUT_DIR / transform.__name__
     makedirs(output_dir, exist_ok=True)
 
     for filename in listdir(DATASET_DIR):
-        _load_transform_and_save(DATASET_DIR / filename, transform, output_dir)
+        _load_transform_and_save(DATASET_DIR / filename, output_dir, transform)
 
 
 @timeit
@@ -107,32 +120,9 @@ def process_images_parallel_pooled(
 
 
 @timeit
-def process_images_parallel_conveyor(
+def process_images_parallel_conveyors(
         transform: Callable[[NDArray], NDArray],
-) -> None:
-    output_dir = OUTPUT_DIR / transform.__name__
-    makedirs(output_dir, exist_ok=True)
-    loaded_data_queue, processed_data_queue = Queue(), Queue()
-
-    loading_thread = Thread(target=_load_data_conveyor, args=(loaded_data_queue,))
-    loading_thread.start()
-
-    processing_thread = Thread(target=_process_data_conveyor, args=(loaded_data_queue, processed_data_queue, transform))
-    processing_thread.start()
-
-    storing_thread = Thread(target=_save_data_conveyor, args=(processed_data_queue, output_dir))
-    storing_thread.start()
-
-    loading_thread.join()
-    processing_thread.join()
-    storing_thread.join()
-
-
-@timeit
-def process_images_parallel_no_load_balancing(
-        transform: Callable[[NDArray], NDArray],
-        executor: Type[Process | Thread],
-        num_workers: int = cpu_count()
+        num_workers: int = cpu_count(),
 ) -> None:
     output_dir = OUTPUT_DIR / transform.__name__
     makedirs(output_dir, exist_ok=True)
@@ -142,13 +132,7 @@ def process_images_parallel_no_load_balancing(
         num_of_chunks=num_workers
     )
 
-    executors = [
-        executor(target=_bulk_load_transform_and_save, args=(data_chunks[i], transform, output_dir))
+    _execute([
+        Process(target=_run_image_processing_conveyor, args=(data_chunks[i], output_dir, transform))
         for i in range(num_workers)
-    ]
-
-    for exe in executors:
-        exe.start()
-
-    for exe in executors:
-        exe.join()
+    ])

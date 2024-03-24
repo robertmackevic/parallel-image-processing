@@ -1,8 +1,9 @@
 import time
-from functools import wraps
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import wraps, partial
 from os import remove
 from pathlib import Path
-from typing import Callable, Any
+from typing import Callable, Any, List, Type, Optional
 from zipfile import ZipFile
 
 import cv2
@@ -64,12 +65,52 @@ def timeit(function: Callable) -> Callable:
     @wraps(function)
     def wrapper(*args, **kwargs) -> Any:
         start_time = time.perf_counter()
-        result = function(*args, **kwargs)
+        function(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
         print(f"Function {function.__name__} "
               f"with args {[v.__name__ for v in kwargs.values() if hasattr(v, '__name__')]} "
               f"took {total_time:.4f} seconds")
-        return result
+        return total_time
 
     return wrapper
+
+
+def _generate_worker_sequence(max_workers: int) -> List[int]:
+    sequence, workers = [], 2
+    while workers <= max_workers:
+        sequence.append(workers)
+        workers *= 2
+    return sequence
+
+
+def run_testing(
+        function: Callable,
+        transform: Callable[[NDArray], NDArray],
+        max_workers: int,
+        pool_executor: Optional[Type[ProcessPoolExecutor | ThreadPoolExecutor]] = None
+) -> None:
+    worker_sequence = _generate_worker_sequence(max_workers)
+    _function = partial(function, pool_executor=pool_executor) if pool_executor is not None else function
+
+    processing_times = [
+        _function(transform=transform, num_workers=workers)
+        for workers in worker_sequence
+    ]
+
+    plt.figure(figsize=(8, 6))
+    bars = plt.bar([str(workers) for workers in worker_sequence], processing_times)
+    plt.xlabel("Number of Workers", fontsize=14)
+    plt.ylabel("Time (seconds)", fontsize=14)
+
+    title = f"Performance of {function.__name__} using {transform.__name__} method"
+    if pool_executor is not None:
+        title += f" with {pool_executor.__name__}"
+
+    plt.title(title, fontsize=16)
+
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2, height, f"{height:.2f}", ha="center", va="bottom")
+
+    plt.show()
