@@ -7,7 +7,9 @@ from typing import Callable, Any, List, Type, Optional
 from zipfile import ZipFile
 
 import cv2
+import pandas as pd
 import requests
+import seaborn as sns
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from tqdm import tqdm
@@ -86,31 +88,44 @@ def _generate_worker_sequence(max_workers: int) -> List[int]:
 
 def run_testing(
         function: Callable,
-        transform: Callable[[NDArray], NDArray],
+        transforms: List[Callable[[NDArray], NDArray]],
         max_workers: int,
         pool_executor: Optional[Type[ProcessPoolExecutor | ThreadPoolExecutor]] = None
 ) -> None:
     worker_sequence = _generate_worker_sequence(max_workers)
     _function = partial(function, pool_executor=pool_executor) if pool_executor is not None else function
 
-    processing_times = [
-        _function(transform=transform, num_workers=workers)
-        for workers in worker_sequence
-    ]
+    processing_times = {
+        transform.__name__: [
+            _function(transform=transform, num_workers=workers)
+            for workers in worker_sequence
+        ]
+        for transform in transforms
+    }
 
-    plt.figure(figsize=(8, 6))
-    bars = plt.bar([str(workers) for workers in worker_sequence], processing_times)
+    df = pd.DataFrame(processing_times)
+    df["Number of Workers"] = worker_sequence
+    df = pd.melt(df, id_vars="Number of Workers", var_name="Transform", value_name="Time (seconds)")
+
+    plt.figure(figsize=(10, 6))
+    ax = sns.barplot(data=df, x="Number of Workers", y="Time (seconds)", hue="Transform")
+
+    for patch in ax.patches:
+        if patch.get_height() != 0:
+            ax.annotate(
+                format(patch.get_height(), ".2f"),
+                (patch.get_x() + patch.get_width() / 2., patch.get_height()),
+                ha="center", va="center", xytext=(0, 10), textcoords="offset points"
+            )
+
     plt.xlabel("Number of Workers", fontsize=14)
     plt.ylabel("Time (seconds)", fontsize=14)
 
-    title = f"Performance of {function.__name__} using {transform.__name__} method"
+    title = f"Performance of {function.__name__}"
     if pool_executor is not None:
-        title += f" with {pool_executor.__name__}"
+        title += f" using {pool_executor.__name__}"
 
     plt.title(title, fontsize=16)
 
-    for bar in bars:
-        height = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2, height, f"{height:.2f}", ha="center", va="bottom")
-
+    plt.tight_layout()
     plt.show()
